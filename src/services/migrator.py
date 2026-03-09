@@ -57,7 +57,7 @@ def _migrate_single_study(
         try:
             logger.info(f"C-MOVE study {study_uid} (attempt {attempt}/{settings.max_retries})")
 
-            # Query for this specific study to get a query ID for the move
+            # Query for this specific study on the source PACS
             query_response = modality.query(
                 data={
                     "Level": "Study",
@@ -66,17 +66,11 @@ def _migrate_single_study(
             )
             query_id = query_response["ID"]
 
-            # Verify the query returned at least one answer
-            answers = client.get_queries_id_answers(id_=query_id)
-            if not answers:
+            if not query_response.get("answers"):
                 raise RuntimeError(f"Study {study_uid} not found on source PACS")
 
             # C-MOVE the study into this Orthanc instance
-            client.post_queries_id_answers_index_retrieve(
-                id_=query_id,
-                index="0",
-                json=settings.dest_aet,
-            )
+            modality.move(query_id, {"TargetAet": settings.dest_aet})
 
             # Verify the study arrived
             if _verify_study_arrived(client, study_uid):
