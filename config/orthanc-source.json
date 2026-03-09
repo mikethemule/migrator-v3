@@ -1,0 +1,19 @@
+{
+  "Name": "SOURCE_PACS",
+  "HttpPort": 8042,
+  "DicomPort": 4242,
+  "DicomAet": "SOURCE_PACS",
+  "RemoteAccessAllowed": true,
+  "AuthenticationEnabled": true,
+  "RegisteredUsers": {
+    "orthanc": "orthanc"
+  },
+  "DicomModalities": {
+    "DEST_ORTHANC": {
+      "AET": "DEST_ORTHANC",
+      "Host": "orthanc-dest",
+      "Port": 4242,
+      "Manufacturer": "Generic"
+    }
+  }
+}

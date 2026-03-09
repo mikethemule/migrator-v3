@@ -1,0 +1,42 @@
+services:
+  # --- Test environment ---
+  # Source PACS: Orthanc instance acting as the third-party PACS
+  orthanc-source:
+    image: orthancteam/orthanc:24.6.0
+    ports:
+      - "8043:8042"
+      - "4243:4242"
+    volumes:
+      - ./config/orthanc-source.json:/etc/orthanc/orthanc.json:ro
+    environment:
+      ORTHANC__NAME: "SOURCE_PACS"
+
+  # Destination: Orthanc instance (mirrors your production setup)
+  orthanc-dest:
+    image: orthancteam/orthanc:24.6.0
+    ports:
+      - "8042:8042"
+      - "4242:4242"
+    volumes:
+      - ./config/orthanc-dest.json:/etc/orthanc/orthanc.json:ro
+    environment:
+      ORTHANC__NAME: "DEST_ORTHANC"
+
+  # Migration tool
+  migrator:
+    build: .
+    depends_on:
+      - orthanc-source
+      - orthanc-dest
+    env_file: .env
+    volumes:
+      - migrator-data:/app/data
+    # Default CMD is "run" (discover + migrate).
+    # Override for specific commands:
+    #   docker compose run migrator discover
+    #   docker compose run migrator status
+    #   docker compose run migrator verify
+    #   docker compose run migrator retry
+
+volumes:
+  migrator-data:
