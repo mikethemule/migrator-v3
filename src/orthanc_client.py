@@ -4,8 +4,8 @@ from src.config import settings
 
 
 def get_client() -> Orthanc:
-    return Orthanc(
-        url=settings.orthanc_url,
-        username=settings.orthanc_username,
-        password=settings.orthanc_password,
-    )
+    kwargs = {"url": settings.orthanc_url}
+    if settings.orthanc_username:
+        kwargs["username"] = settings.orthanc_username
+        kwargs["password"] = settings.orthanc_password
+    return Orthanc(**kwargs)
