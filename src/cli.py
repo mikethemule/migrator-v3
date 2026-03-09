@@ -25,10 +25,12 @@ def _get_tracker() -> MigrationTracker:
 
 
 @app.command()
-def discover():
+def discover(
+    skip_echo: bool = typer.Option(False, "--skip-echo", help="Skip C-ECHO connectivity check"),
+):
     """C-FIND all studies on the source PACS and register them for migration."""
     tracker = _get_tracker()
-    new_count = discover_studies(tracker)
+    new_count = discover_studies(tracker, skip_echo=skip_echo)
     _print_status(tracker)
     logger.info(f"Discovery complete. {new_count} new studies registered.")
 
@@ -51,11 +53,13 @@ def migrate():
 
 
 @app.command()
-def run():
+def run(
+    skip_echo: bool = typer.Option(False, "--skip-echo", help="Skip C-ECHO connectivity check"),
+):
     """Discover and migrate in one step."""
     tracker = _get_tracker()
     logger.info("Phase 1: Discovery")
-    discover_studies(tracker)
+    discover_studies(tracker, skip_echo=skip_echo)
     _print_status(tracker)
 
     logger.info("Phase 2: Migration")

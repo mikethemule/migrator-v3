@@ -6,7 +6,7 @@ from src.orthanc_client import get_client
 from src.services.tracker import MigrationTracker
 
 
-def discover_studies(tracker: MigrationTracker) -> int:
+def discover_studies(tracker: MigrationTracker, skip_echo: bool = False) -> int:
     """C-FIND all studies on the source PACS and register them in the tracker.
 
     Returns the number of newly discovered studies.
@@ -14,14 +14,17 @@ def discover_studies(tracker: MigrationTracker) -> int:
     client = get_client()
     modality = Modality(client, settings.source_modality)
 
-    # Verify connectivity first
-    logger.info(f"Testing connection to modality '{settings.source_modality}'...")
-    if not modality.echo():
-        raise ConnectionError(
-            f"C-ECHO failed for modality '{settings.source_modality}'. "
-            "Check Orthanc modality configuration."
-        )
-    logger.info("C-ECHO successful.")
+    # Verify connectivity first (optional — some PACS restrict C-ECHO)
+    if skip_echo:
+        logger.info("Skipping C-ECHO check.")
+    else:
+        logger.info(f"Testing connection to modality '{settings.source_modality}'...")
+        if not modality.echo():
+            raise ConnectionError(
+                f"C-ECHO failed for modality '{settings.source_modality}'. "
+                "Check Orthanc modality configuration, or use --skip-echo."
+            )
+        logger.info("C-ECHO successful.")
 
     # Build the C-FIND query
     query: dict = {
