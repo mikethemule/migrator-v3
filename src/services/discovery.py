@@ -1,5 +1,7 @@
+import time
 from datetime import date, datetime, timedelta
 
+import httpx
 from loguru import logger
 from pyorthanc import Modality
 
@@ -79,7 +81,10 @@ def discover_studies(tracker: MigrationTracker, skip_echo: bool = False) -> int:
 
 
 def _cfind(client, modality: Modality, date_range: str) -> list[dict]:
-    """Run a single C-FIND query for a date range and return the answers."""
+    """Run a single C-FIND query for a date range and return the answers.
+
+    Retries on HTTP errors (e.g. DICOM timeouts) with exponential backoff.
+    """
     query = {
         "Level": "Study",
         "Query": {
@@ -91,9 +96,24 @@ def _cfind(client, modality: Modality, date_range: str) -> list[dict]:
             "ModalitiesInStudy": "",
         },
     }
-    query_response = modality.query(data=query)
-    query_id = query_response["ID"]
-    return _get_query_answers(client, query_id)
+    for attempt in range(1, settings.max_retries + 1):
+        try:
+            query_response = modality.query(data=query)
+            query_id = query_response["ID"]
+            return _get_query_answers(client, query_id)
+        except httpx.HTTPError as exc:
+            if attempt == settings.max_retries:
+                raise
+            delay = min(
+                settings.retry_backoff_base ** attempt,
+                settings.retry_backoff_max,
+            )
+            logger.warning(
+                f"C-FIND failed for {date_range} (attempt {attempt}/{settings.max_retries}): "
+                f"{exc}. Retrying in {delay}s..."
+            )
+            time.sleep(delay)
+    return []  # unreachable, but satisfies type checkers
 
 
 def _drill_down_daily(
