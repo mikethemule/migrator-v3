@@ -53,6 +53,7 @@ def _migrate_single_study(
     """Attempt to C-MOVE a single study with retries."""
     tracker.mark_in_progress(study_uid)
 
+    expected_instances = None
     for attempt in range(1, settings.max_retries + 1):
         try:
             logger.info(f"C-MOVE study {study_uid} (attempt {attempt}/{settings.max_retries})")
@@ -61,7 +62,10 @@ def _migrate_single_study(
             query_response = modality.query(
                 data={
                     "Level": "Study",
-                    "Query": {"StudyInstanceUID": study_uid},
+                    "Query": {
+                        "StudyInstanceUID": study_uid,
+                        "NumberOfStudyRelatedInstances": "",
+                    },
                 }
             )
             query_id = query_response["ID"]
@@ -69,12 +73,14 @@ def _migrate_single_study(
             if not query_response.get("answers"):
                 raise RuntimeError(f"Study {study_uid} not found on source PACS")
 
+            expected_instances = _parse_instance_count(query_response["answers"][0])
+
             # C-MOVE the study into this Orthanc instance
             with move_timeout(client):
                 modality.move(query_id, {"TargetAet": settings.dest_aet})
 
-            # Verify the study arrived
-            if _verify_study_arrived(client, study_uid):
+            # Verify the study arrived with instance count comparison
+            if _verify_study_arrived(client, study_uid, expected_instances):
                 tracker.mark_completed(study_uid)
                 logger.info(f"Successfully migrated study {study_uid}")
                 return True
@@ -86,7 +92,7 @@ def _migrate_single_study(
             logger.warning(f"Attempt {attempt} failed for {study_uid}: {error_msg}")
 
             # DIMSE 0xB000 = partial success; check if study arrived despite the error
-            if "0xb000" in str(e).lower() and _verify_study_arrived(client, study_uid):
+            if "0xb000" in str(e).lower() and _verify_study_arrived(client, study_uid, expected_instances):
                 logger.warning(
                     f"Study {study_uid} arrived despite DIMSE 0xB000 — marking completed"
                 )
@@ -108,13 +114,38 @@ def _migrate_single_study(
     return False
 
 
-def _verify_study_arrived(client, study_uid: str) -> bool:
-    """Check that a study exists in the destination Orthanc by StudyInstanceUID."""
+def _verify_study_arrived(
+    client, study_uid: str, expected_instances: int | None = None
+) -> bool:
+    """Check that a study exists in the destination Orthanc and instance count matches."""
     try:
         result = client.post_tools_find(json={
             "Level": "Study",
             "Query": {"StudyInstanceUID": study_uid},
         })
-        return len(result) > 0
+        if not result:
+            return False
+
+        if expected_instances is None:
+            return True
+
+        stats = client.get_studies_id_statistics(id_=result[0])
+        actual = stats.get("CountInstances", 0)
+        if actual >= expected_instances:
+            return True
+
+        logger.warning(
+            f"Study {study_uid}: expected {expected_instances} instances, "
+            f"got {actual} in destination"
+        )
+        return False
     except Exception:
         return False
+
+
+def _parse_instance_count(answer: dict) -> int | None:
+    """Extract NumberOfStudyRelatedInstances from a simplified C-FIND answer."""
+    value = answer.get("NumberOfStudyRelatedInstances", "")
+    if value and str(value).strip().isdigit():
+        return int(str(value).strip())
+    return None
