@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     retry_backoff_base: int = 2
     retry_backoff_max: int = 60
     query_timeout: float = 600.0
+    move_timeout: float = 900.0
 
     # Tracking database
     db_path: str = "data/migration.db"

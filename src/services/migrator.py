@@ -4,7 +4,7 @@ from loguru import logger
 from pyorthanc import Modality
 
 from src.config import settings
-from src.orthanc_client import get_client
+from src.orthanc_client import get_client, move_timeout
 from src.services.tracker import MigrationTracker, StudyStatus
 
 
@@ -70,7 +70,8 @@ def _migrate_single_study(
                 raise RuntimeError(f"Study {study_uid} not found on source PACS")
 
             # C-MOVE the study into this Orthanc instance
-            modality.move(query_id, {"TargetAet": settings.dest_aet})
+            with move_timeout(client):
+                modality.move(query_id, {"TargetAet": settings.dest_aet})
 
             # Verify the study arrived
             if _verify_study_arrived(client, study_uid):
@@ -83,6 +84,14 @@ def _migrate_single_study(
         except Exception as e:
             error_msg = f"{type(e).__name__}: {e}"
             logger.warning(f"Attempt {attempt} failed for {study_uid}: {error_msg}")
+
+            # DIMSE 0xB000 = partial success; check if study arrived despite the error
+            if "0xb000" in str(e).lower() and _verify_study_arrived(client, study_uid):
+                logger.warning(
+                    f"Study {study_uid} arrived despite DIMSE 0xB000 — marking completed"
+                )
+                tracker.mark_completed(study_uid)
+                return True
 
             if attempt < settings.max_retries:
                 backoff = min(
